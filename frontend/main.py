@@ -14,3 +14,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    window.load_test_data()
