@@ -237,6 +237,8 @@ class MainWindow(QMainWindow):
             data["dr"], data["dt"], data["dn"]
         )
 
+        exp_id = self.db.create_experiment("Test run")
+
 
     def update_statistics(self, dx, dy, dz, dr, dt, dn, clk):
 
