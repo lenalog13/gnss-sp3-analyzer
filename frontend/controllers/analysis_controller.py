@@ -1,10 +1,10 @@
 import numpy as np
-
+from database.db_manager import DBManager
 
 class AnalysisController:
 
     def __init__(self):
-        pass
+        self.db = DBManager()
 
     def run_analysis(self, sp3_calc_path, sp3_ref_path, clk_path, satellite):
 
@@ -20,6 +20,8 @@ class AnalysisController:
         dn = 0.03 * np.sin(2 * t)
 
         clk = np.random.normal(0, 5, len(t))
+        
+        exp_id = self.db.create_experiment("Test run")
 
         return {
             "t": t,
