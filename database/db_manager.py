@@ -68,3 +68,24 @@ class DBManager:
             ))
 
             self.conn.commit()
+
+        def get_experiments(self):
+
+            self.cursor.execute("""
+                SELECT id, name, created_at
+                FROM experiments
+                ORDER BY created_at DESC
+            """)
+
+            return self.cursor.fetchall()
+        
+        def get_epochs(self, experiment_id):
+
+            self.cursor.execute("""
+                SELECT epoch_time, dx, dy, dz, dr, dt, dn, clock_error
+                FROM epochs
+                WHERE experiment_id = %s
+                ORDER BY epoch_time
+            """, (experiment_id,))
+
+            return self.cursor.fetchall()

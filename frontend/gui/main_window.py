@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
 from controllers.analysis_controller import AnalysisController
+from gui.history_window import HistoryWindow
 
 
 class MainWindow(QMainWindow):
@@ -73,6 +74,11 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(btn_load)
         toolbar.addWidget(btn_run)
         toolbar.addWidget(btn_export)
+
+        btn_history = QPushButton("History")
+        btn_history.clicked.connect(self.open_history)
+
+        toolbar.addWidget(btn_history)
 
     # ---------------- File Panel ---------------- #
 
@@ -294,3 +300,26 @@ class MainWindow(QMainWindow):
         self.rtn_plot.plot(t, data["dn"], pen='m')
 
         self.clock_plot.plot(t, data["clk"], pen='w')
+
+
+    def open_history(self):
+
+        self.history_window = HistoryWindow(self.controller.db)
+        self.history_window.experiment_selected.connect(self.load_experiment)
+        self.history_window.show()
+
+    def load_experiment(self, experiment_id):
+
+        data = self.controller.load_experiment(experiment_id)
+
+        self.update_plots(data)
+        self.update_statistics(
+            data["dx"], data["dy"], data["dz"],
+            data["dr"], data["dt"], data["dn"],
+            data["clk"]
+        )
+        self.update_table(
+            data["t"],
+            data["dx"], data["dy"], data["dz"],
+            data["dr"], data["dt"], data["dn"]
+        )

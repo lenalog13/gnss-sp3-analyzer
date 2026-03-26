@@ -77,3 +77,40 @@ class AnalysisController:
                 "max": np.max(np.abs(dx)),
                 "clock_rms": rms(clk)
             }
+      
+        
+    def load_experiment(self, experiment_id):
+
+        rows = self.db.get_epochs(experiment_id)
+
+        import numpy as np
+
+        t = []
+        dx = []
+        dy = []
+        dz = []
+        dr = []
+        dt = []
+        dn = []
+        clk = []
+
+        for row in rows:
+            t.append(row[0])
+            dx.append(row[1])
+            dy.append(row[2])
+            dz.append(row[3])
+            dr.append(row[4])
+            dt.append(row[5])
+            dn.append(row[6])
+            clk.append(row[7])
+
+        return {
+            "t": np.array(t),
+            "dx": np.array(dx),
+            "dy": np.array(dy),
+            "dz": np.array(dz),
+            "dr": np.array(dr),
+            "dt": np.array(dt),
+            "dn": np.array(dn),
+            "clk": np.array(clk)
+        }
