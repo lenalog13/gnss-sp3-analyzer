@@ -8,8 +8,6 @@ class AnalysisController:
 
     def run_analysis(self, sp3_calc_path, sp3_ref_path, clk_path, satellite):
 
-        import numpy as np
-
         # --- генерация (пока тестовая) ---
         t = np.linspace(0, 24, 200)
 
@@ -26,7 +24,7 @@ class AnalysisController:
         #  1. создаём эксперимент
         exp_id = self.db.create_experiment("Test run")
 
-        # 🔥 2. сохраняем эпохи
+        #  2. сохраняем эпохи
         for i in range(len(t)):
             self.db.insert_epoch(exp_id, {
                 "t": float(t[i]),
@@ -60,30 +58,26 @@ class AnalysisController:
     
     def compute_statistics(self, dx, dy, dz, dr, dt, dn, clk):
 
-        import numpy as np
-
         def rms(x):
             return np.sqrt(np.mean(x**2))
 
-            return {
-                "rms_x": rms(dx),
-                "rms_y": rms(dy),
-                "rms_z": rms(dz),
-                "rms_3d": rms(np.sqrt(dx**2 + dy**2 + dz**2)),
-                "rms_r": rms(dr),
-                "rms_t": rms(dt),
-                "rms_n": rms(dn),
-                "mean": np.mean(dx),
-                "max": np.max(np.abs(dx)),
-                "clock_rms": rms(clk)
-            }
+        return {
+            "rms_x": rms(dx),
+            "rms_y": rms(dy),
+            "rms_z": rms(dz),
+            "rms_3d": rms(np.sqrt(dx**2 + dy**2 + dz**2)),
+            "rms_r": rms(dr),
+            "rms_t": rms(dt),
+            "rms_n": rms(dn),
+            "mean": np.mean(dx),
+            "max": np.max(np.abs(dx)),
+            "clock_rms": rms(clk)
+        }
       
         
     def load_experiment(self, experiment_id):
 
         rows = self.db.get_epochs(experiment_id)
-
-        import numpy as np
 
         t = []
         dx = []

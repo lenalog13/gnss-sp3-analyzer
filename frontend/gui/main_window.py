@@ -1,11 +1,12 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QFileDialog,
-    QComboBox, QTableWidget, QTableWidgetItem,
-    QTabWidget, QToolBar, QSplitter
+    QPushButton, QLabel, QLineEdit, QFileDialog, QGridLayout,
+    QComboBox, QTableWidget, QTableWidgetItem, QHeaderView,
+    QTabWidget, QToolBar, QSplitter, QStyle, QApplication
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import ( Qt, QSize )
 import pyqtgraph as pg
+import numpy as np
 from controllers.analysis_controller import AnalysisController
 from gui.history_window import HistoryWindow
 
@@ -16,8 +17,8 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("GNSS SP3 Analyzer")
-        self.setMinimumSize(1100, 750)
-        self.resize(1200, 800)
+        self.setMinimumSize(1000, 700)
+        self.resize(1050, 750)
 
         self.controller = AnalysisController()
 
@@ -26,6 +27,36 @@ class MainWindow(QMainWindow):
     # ---------------- UI ---------------- #
 
     def init_ui(self):
+        self.setStyleSheet("""
+        QWidget {
+            font-size: 12px;
+        }
+
+        QLineEdit {
+            background-color: #2b2b2b;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 4px;
+        }
+
+        QPushButton {
+            background-color: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 4px 8px;
+        }
+
+        QPushButton:hover {
+            background-color: #4a4a4a;
+        }
+
+        QComboBox {
+            background-color: #2b2b2b;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 3px;
+        }
+        """)
 
         self.create_toolbar()
 
@@ -55,6 +86,7 @@ class MainWindow(QMainWindow):
 
         # Таблица
         self.table = self.create_table()
+        self.table.setMaximumHeight(200)
         main_layout.addWidget(self.table)
 
         central_widget.setLayout(main_layout)
@@ -65,19 +97,22 @@ class MainWindow(QMainWindow):
 
         toolbar = QToolBar("Main Toolbar")
         self.addToolBar(toolbar)
+        toolbar.setIconSize(QSize(18, 18))
 
-        btn_load = QPushButton("Load")
-        btn_run = QPushButton("Run")
-        btn_run.clicked.connect(self.run_analysis)
-        btn_export = QPushButton("Export")
+        btn_load = QPushButton("📂 Load")
+
+        btn_run = QPushButton("▶ Run")
+        btn_run.clicked.connect(self.load_test_data)
+
+        btn_export = QPushButton("💾 Export")
+
+        btn_history = QPushButton("🕓 History")
+        btn_history.clicked.connect(self.open_history)
+
 
         toolbar.addWidget(btn_load)
         toolbar.addWidget(btn_run)
         toolbar.addWidget(btn_export)
-
-        btn_history = QPushButton("History")
-        btn_history.clicked.connect(self.open_history)
-
         toolbar.addWidget(btn_history)
 
     # ---------------- File Panel ---------------- #
@@ -91,6 +126,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(self.create_file_row("CLK file:", "clk"))
 
         # Satellite selector
+        layout.addSpacing(10)
         sat_layout = QHBoxLayout()
         sat_layout.setSpacing(8)
 
@@ -98,7 +134,8 @@ class MainWindow(QMainWindow):
         label.setMinimumWidth(130)
 
         self.satellite_box = QComboBox()
-        self.satellite_box.setFixedWidth(200)
+        self.satellite_box.setMinimumWidth(200)
+        self.satellite_box.setMaximumWidth(250)
 
         sat_layout.addWidget(label)
         sat_layout.addWidget(self.satellite_box)
@@ -109,6 +146,7 @@ class MainWindow(QMainWindow):
         container = QWidget()
         container.setLayout(layout)
         container.setMinimumHeight(140)
+        container.setMaximumHeight(120)
 
         return container
 
@@ -125,10 +163,10 @@ class MainWindow(QMainWindow):
         label.setAlignment(Qt.AlignVCenter)
 
         line_edit = QLineEdit()
-        line_edit.setMinimumHeight(34)
+        line_edit.setMinimumHeight(26)
 
         button = QPushButton("Browse")
-        button.setMinimumHeight(34)
+        button.setMinimumHeight(26)
         button.setFixedWidth(90)
 
         button.clicked.connect(lambda: self.select_file(line_edit))
@@ -138,6 +176,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(label)
         layout.addWidget(line_edit)
         layout.addWidget(button)
+        layout.setContentsMargins(0, 2, 0, 2)
 
         return layout
 
@@ -155,8 +194,12 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
 
         self.orbit_plot = pg.PlotWidget(title="Orbit Errors (XYZ)")
+        self.orbit_plot.setTitle("Orbit Errors (XYZ)", size="12pt")
         self.rtn_plot = pg.PlotWidget(title="RTN Errors")
         self.clock_plot = pg.PlotWidget(title="Clock Bias")
+
+        pg.setConfigOption('background', '#1e1e1e')
+        pg.setConfigOption('foreground', '#cccccc')
 
         self.orbit_plot.setContentsMargins(5, 5, 5, 5)
         self.rtn_plot.setContentsMargins(5, 5, 5, 5)
@@ -166,6 +209,12 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.rtn_plot, "RTN")
         tabs.addTab(self.clock_plot, "Clock")
 
+        for plot in [self.orbit_plot, self.rtn_plot, self.clock_plot]:
+            plot.showGrid(x=True, y=True, alpha=0.3)
+
+        self.orbit_plot.addLegend()
+        self.rtn_plot.addLegend()
+
         return tabs
 
     # ---------------- Statistics ---------------- #
@@ -173,10 +222,7 @@ class MainWindow(QMainWindow):
     def create_statistics_panel(self):
 
         widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-
-        self.stats_labels = {}
+        layout = QGridLayout()
 
         stats = [
             "RMS X", "RMS Y", "RMS Z", "RMS 3D",
@@ -184,17 +230,28 @@ class MainWindow(QMainWindow):
             "Mean", "Max", "Clock RMS"
         ]
 
-        for stat in stats:
-            label = QLabel(f"{stat}: ---")
-            label.setMinimumHeight(20)
-            self.stats_labels[stat] = label
-            layout.addWidget(label)
+        self.stats_labels = {}
 
-        layout.addStretch()  # ← ВАЖНО
+        for i, stat in enumerate(stats):
+
+            label_name = QLabel(stat)
+            label_value = QLabel("---")
+
+            label_name.setStyleSheet("color: #aaaaaa;")
+            label_value.setStyleSheet("font-family: monospace;")
+
+            label_name.setAlignment(Qt.AlignLeft)
+            label_value.setAlignment(Qt.AlignRight)
+
+            layout.addWidget(label_name, i, 0)
+            layout.addWidget(label_value, i, 1)
+
+            self.stats_labels[stat] = label_value
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
 
         widget.setLayout(layout)
-        widget.setMinimumWidth(200)
-
         return widget
 
     # ---------------- Table ---------------- #
@@ -204,9 +261,10 @@ class MainWindow(QMainWindow):
         table = QTableWidget()
         table.setColumnCount(8)
 
-        table.horizontalHeader().setStretchLastSection(True)
-        table.horizontalHeader().setDefaultSectionSize(100)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
         table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
 
         table.setHorizontalHeaderLabels([
             "Epoch", "Sat", "dX", "dY", "dZ",
@@ -248,8 +306,6 @@ class MainWindow(QMainWindow):
 
     def update_statistics(self, dx, dy, dz, dr, dt, dn, clk):
 
-        import numpy as np
-
         def rms(x):
             return np.sqrt(np.mean(x**2))
 
@@ -267,7 +323,8 @@ class MainWindow(QMainWindow):
         }
 
         for key, value in stats.items():
-            self.stats_labels[key].setText(f"{key}: {value:.4f}")
+            self.stats_labels[key].setText(f"{value:.4f}")
+
 
     def update_table(self, t, dx, dy, dz, dr, dt, dn):
 
@@ -282,6 +339,7 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 5, QTableWidgetItem(f"{dr[i]:.4f}"))
             self.table.setItem(i, 6, QTableWidgetItem(f"{dt[i]:.4f}"))
             self.table.setItem(i, 7, QTableWidgetItem(f"{dn[i]:.4f}"))
+
 
     def update_plots(self, data):
 
@@ -308,6 +366,7 @@ class MainWindow(QMainWindow):
         self.history_window.experiment_selected.connect(self.load_experiment)
         self.history_window.show()
 
+
     def load_experiment(self, experiment_id):
 
         data = self.controller.load_experiment(experiment_id)
@@ -323,3 +382,42 @@ class MainWindow(QMainWindow):
             data["dx"], data["dy"], data["dz"],
             data["dr"], data["dt"], data["dn"]
         )
+
+    def load_test_data(self):
+
+        self.orbit_plot.clear()
+        self.rtn_plot.clear()
+        self.clock_plot.clear()
+
+        t = np.linspace(0, 24, 200)
+
+        dx = 0.1 * np.sin(t)
+        dy = 0.1 * np.cos(t)
+        dz = 0.05 * np.sin(2 * t)
+
+        dr = 0.05 * np.sin(t)
+        dt = 0.08 * np.cos(t)
+        dn = 0.03 * np.sin(2 * t)
+
+        clk = np.random.normal(0, 5, len(t))
+
+        self.update_plots({
+            "t": t, "dx": dx, "dy": dy, "dz": dz,
+            "dr": dr, "dt": dt, "dn": dn, "clk": clk
+        })
+
+        self.orbit_plot.plot(t, dx, pen='b', name="dX")
+        self.orbit_plot.plot(t, dy, pen='r', name="dY")
+        self.orbit_plot.plot(t, dz, pen='g', name="dZ")
+
+        self.orbit_plot.setTitle("Orbit Errors (XYZ)", color="#cccccc", size="11pt")
+
+        self.rtn_plot.plot(t, dr, pen='y', name="R")
+        self.rtn_plot.plot(t, dt, pen='c', name="T")
+        self.rtn_plot.plot(t, dn, pen='m', name="N")
+
+        legend = self.orbit_plot.addLegend()
+        legend.setOffset((10, 10))
+
+        self.update_statistics(dx, dy, dz, dr, dt, dn, clk)
+        self.update_table(t, dx, dy, dz, dr, dt, dn)
