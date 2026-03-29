@@ -7,20 +7,21 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import ( Qt, QSize )
 import pyqtgraph as pg
 import numpy as np
+from database.db_manager import DBManager
+from backend.services.analysis_service import AnalysisService
 from controllers.analysis_controller import AnalysisController
 from gui.history_window import HistoryWindow
 
 
 class MainWindow(QMainWindow):
 
-    def __init__(self):
+    def __init__(self, controller):
         super().__init__()
+        self.controller = controller
 
         self.setWindowTitle("GNSS SP3 Analyzer")
         self.setMinimumSize(1000, 700)
         self.resize(1050, 750)
-
-        self.controller = AnalysisController()
 
         self.init_ui()
 
@@ -244,7 +245,7 @@ class MainWindow(QMainWindow):
             label_value = QLabel("---")
 
             label_name.setStyleSheet("color: #aaaaaa;")
-            label_value.setStyleSheet("font-family: monospace;")
+            label_value.setStyleSheet("font-family: menlo;")
 
             label_name.setAlignment(Qt.AlignLeft)
             label_value.setAlignment(Qt.AlignRight)
