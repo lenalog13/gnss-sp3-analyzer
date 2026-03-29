@@ -194,8 +194,17 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
 
         self.orbit_plot = pg.PlotWidget(title="Orbit Errors (XYZ)")
-        self.orbit_plot.setTitle("Orbit Errors (XYZ)", size="12pt")
+        legend = self.orbit_plot.addLegend(offset=(10, 10))
+        legend.setBrush((30, 30, 30, 200))   
+        legend.setPen((200, 200, 200))       
+        self.orbit_plot.addLegend()
+
         self.rtn_plot = pg.PlotWidget(title="RTN Errors")
+        legend = self.rtn_plot.addLegend(offset=(10, 10))
+        legend.setBrush((30, 30, 30, 200))   
+        legend.setPen((200, 200, 200)) 
+        self.rtn_plot.addLegend()
+
         self.clock_plot = pg.PlotWidget(title="Clock Bias")
 
         pg.setConfigOption('background', '#1e1e1e')
@@ -211,9 +220,6 @@ class MainWindow(QMainWindow):
 
         for plot in [self.orbit_plot, self.rtn_plot, self.clock_plot]:
             plot.showGrid(x=True, y=True, alpha=0.3)
-
-        self.orbit_plot.addLegend()
-        self.rtn_plot.addLegend()
 
         return tabs
 
