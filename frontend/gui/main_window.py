@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import ( Qt, QSize )
 import pyqtgraph as pg
 import numpy as np
+import requests
 from database.db_manager import DBManager
 from backend.services.analysis_service import AnalysisService
 from controllers.analysis_controller import AnalysisController
@@ -22,6 +23,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("GNSS SP3 Analyzer")
         self.setMinimumSize(1000, 700)
         self.resize(1050, 750)
+
+        self.backend_status = "UNKNOWN"
+
+        self.check_backend()
 
         self.init_ui()
 
@@ -58,6 +63,8 @@ class MainWindow(QMainWindow):
             padding: 3px;
         }
         """)
+
+        self.statusBar().showMessage(f"Backend: {self.backend_status}")
 
         self.create_toolbar()
 
@@ -103,7 +110,7 @@ class MainWindow(QMainWindow):
         btn_load = QPushButton("📂 Load")
 
         btn_run = QPushButton("▶ Run")
-        btn_run.clicked.connect(self.load_test_data)
+        btn_run.clicked.connect(self.run_analysis)
 
         btn_export = QPushButton("💾 Export")
 
@@ -283,32 +290,34 @@ class MainWindow(QMainWindow):
     # ---------------- TEST DATA ---------------- #
 
     def run_analysis(self):
+        try:
+            response = requests.post("http://localhost:8080/analyze")
 
-        sp3_calc = self.calc_path.text()
-        sp3_ref = self.ref_path.text()
-        clk = self.clk_path.text()
-        sat = self.satellite_box.currentText()
+            if response.status_code != 200:
+                print("API error:", response.status_code)
+                return
 
-        data = self.controller.run_analysis(
-            sp3_calc,
-            sp3_ref,
-            clk,
-            sat
-        )
+            data = response.json()
 
-        self.update_plots(data)
-        self.update_statistics(
-            data["dx"], data["dy"], data["dz"],
-            data["dr"], data["dt"], data["dn"],
-            data["clk"]
-        )
-        self.update_table(
-            data["t"],
-            data["dx"], data["dy"], data["dz"],
-            data["dr"], data["dt"], data["dn"]
-        )
+            epochs = data["epochs"]
 
-        exp_id = self.db.create_experiment("Test run")
+            t  = [e["t"] for e in epochs]
+            dx = [e["dx"] for e in epochs]
+            dy = [e["dy"] for e in epochs]
+            dz = [e["dz"] for e in epochs]
+
+            # пока фейковые RTN (потом заменим)
+            dr = dx
+            dt = dy
+            dn = dz
+
+            clk = [0 for _ in t]
+
+            self.update_plots(t, dx, dy, dz, dr, dt, dn, clk)
+            self.update_table(t, dx, dy, dz, dr, dt, dn)
+
+        except Exception as e:
+            print("Connection error:", e)   
 
 
     def update_statistics(self, dx, dy, dz, dr, dt, dn, clk):
@@ -348,23 +357,24 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 7, QTableWidgetItem(f"{dn[i]:.4f}"))
 
 
-    def update_plots(self, data):
+    def update_plots(self, t, dx, dy, dz, dr, dt, dn, clk):
 
         self.orbit_plot.clear()
         self.rtn_plot.clear()
         self.clock_plot.clear()
 
-        t = data["t"]
+        # --- Orbit ---
+        self.orbit_plot.plot(t, dx, pen='b', name="dX")
+        self.orbit_plot.plot(t, dy, pen='r', name="dY")
+        self.orbit_plot.plot(t, dz, pen='g', name="dZ")
 
-        self.orbit_plot.plot(t, data["dx"], pen='b')
-        self.orbit_plot.plot(t, data["dy"], pen='r')
-        self.orbit_plot.plot(t, data["dz"], pen='g')
+        # --- RTN ---
+        self.rtn_plot.plot(t, dr, pen='y', name="R")
+        self.rtn_plot.plot(t, dt, pen='c', name="T")
+        self.rtn_plot.plot(t, dn, pen='m', name="N")
 
-        self.rtn_plot.plot(t, data["dr"], pen='y')
-        self.rtn_plot.plot(t, data["dt"], pen='c')
-        self.rtn_plot.plot(t, data["dn"], pen='m')
-
-        self.clock_plot.plot(t, data["clk"], pen='w')
+        # --- Clock ---
+        self.clock_plot.plot(t, clk, pen='w')
 
 
     def open_history(self):
@@ -428,3 +438,20 @@ class MainWindow(QMainWindow):
 
         self.update_statistics(dx, dy, dz, dr, dt, dn, clk)
         self.update_table(t, dx, dy, dz, dr, dt, dn)
+
+    def check_backend(self):
+
+        try:
+            requests.get("http://localhost:8080/experiments", timeout=1)
+            self.backend_status = "OK"
+        except:
+            self.backend_status = "FAIL"
+
+    def on_run_clicked(self):
+        self.check_backend()
+
+        if self.backend_status != "OK":
+            QMessageBox.warning(self, "Error", "Backend is not running")
+            return
+
+        # дальше запрос /analyze

@@ -1,5 +1,5 @@
 #include "analyze_routes.h"
-#include "../services/analysis_service.h"  // добавь это
+#include "../services/analysis_service.h"
 
 void register_analyze_routes(crow::SimpleApp& app) {
 
@@ -10,18 +10,17 @@ void register_analyze_routes(crow::SimpleApp& app) {
         auto data = service.runFakeAnalysis();
 
         crow::json::wvalue res;
-        res["experiment_id"] = 1;
 
         for (int i = 0; i < data.size(); i++) {
-            crow::json::wvalue epoch;
-
-            epoch["t"]  = data[i].t;
-            epoch["dx"] = data[i].dx;
-            epoch["dy"] = data[i].dy;
-            epoch["dz"] = data[i].dz;
-
-            res["epochs"][i] = std::move(epoch);
+            res["epochs"][i]["t"] = data[i].t;
+            res["epochs"][i]["dx"] = data[i].dx;
+            res["epochs"][i]["dy"] = data[i].dy;
+            res["epochs"][i]["dz"] = data[i].dz;
         }
+
+        res["experiment_id"] = 1;
+
+        return res;  
     });
 
 }

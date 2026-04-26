@@ -5,6 +5,11 @@
 int main() {
     crow::SimpleApp app;
 
+    CROW_ROUTE(app, "/")
+    ([](){
+        return "GNSS Backend is running 🚀";
+    });
+
     register_analyze_routes(app);
     register_experiment_routes(app);
 
