@@ -1,6 +1,6 @@
 #include "experiment_routes.h"
 
-void register_experiment_routes(crow::SimpleApp& app) {
+void setupExperimentRoutes(crow::SimpleApp& app) {
 
     CROW_ROUTE(app, "/experiments")
     ([](){

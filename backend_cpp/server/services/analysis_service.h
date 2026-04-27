@@ -3,9 +3,9 @@
 
 struct Epoch {
     double t;
-    double dx;
-    double dy;
-    double dz;   
+
+    double dx, dy, dz;   // ECEF
+    double dR, dT, dN;   // RTN
 };
 
 class AnalysisService {

@@ -5,13 +5,14 @@
 int main() {
     crow::SimpleApp app;
 
+    // ROOT (чтобы не было 404)
     CROW_ROUTE(app, "/")
     ([](){
-        return "GNSS Backend is running 🚀";
+        return "GNSS Backend is running";
     });
 
-    register_analyze_routes(app);
-    register_experiment_routes(app);
+    setupAnalyzeRoutes(app);
+    setupExperimentRoutes(app);
 
-    app.port(8080).run();
+    app.port(8080).multithreaded().run();
 }
