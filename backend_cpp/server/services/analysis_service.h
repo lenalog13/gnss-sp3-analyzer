@@ -1,14 +1,9 @@
 #pragma once
-#include <vector>
-
-struct Epoch {
-    double t;
-
-    double dx, dy, dz;   // ECEF
-    double dR, dT, dN;   // RTN
-};
+#include <string>
+#include <nlohmann/json.hpp>
 
 class AnalysisService {
 public:
-    std::vector<Epoch> runFakeAnalysis();
+    static nlohmann::json analyze(const std::string& calcPath,
+                                  const std::string& refPath);
 };

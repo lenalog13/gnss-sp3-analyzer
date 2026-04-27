@@ -4,10 +4,61 @@ import pyqtgraph as pg
 import numpy as np
 import requests
 
+class PlotHover:
+    def __init__(self, plot_widget):
+        self.plot = plot_widget
+        self.vLine = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('#aaaaaa'))
+        self.plot.addItem(self.vLine, ignoreBounds=True)
+
+        self.label = pg.TextItem("", anchor=(0,1))
+        self.plot.addItem(self.label)
+
+        self.curves = []
+
+        self.proxy = pg.SignalProxy(
+            self.plot.scene().sigMouseMoved,
+            rateLimit=60,
+            slot=self.mouse_moved
+        )
+
+    def add_curve(self, curve, name):
+        self.curves.append((curve, name))
+
+    def mouse_moved(self, evt):
+        pos = evt[0]
+        vb = self.plot.getViewBox()
+
+        if not self.plot.sceneBoundingRect().contains(pos):
+            return
+
+        mouse_point = vb.mapSceneToView(pos)
+        x = mouse_point.x()
+
+        self.vLine.setPos(x)
+
+        text = f"x = {x:.2f}\n"
+
+        for curve, name in self.curves:
+            data = curve.getData()
+            if data[0] is None:
+                continue
+
+            x_data, y_data = data
+
+            if len(x_data) == 0:
+                continue
+
+            idx = (np.abs(x_data - x)).argmin()
+            y = y_data[idx]
+
+            text += f"{name}: {y:.4f}\n"
+
+        self.label.setText(text)
+        self.label.setPos(x, mouse_point.y())
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, controller):
+    def __init__(self, controller=None):
         super().__init__()
         self.controller = controller
 
@@ -199,27 +250,31 @@ class MainWindow(QMainWindow):
         self.run_analysis()
 
     def run_analysis(self):
-
         try:
-            r = requests.post("http://localhost:8080/analyze")
-            data = r.json()
+            files = {
+                "calc": open(self.calc_path.text(), "rb"),
+                "ref": open(self.ref_path.text(), "rb"),
+            }
 
-            e = data["epochs"]
+            # если есть clk (потом добавим чекбокс)
+            if self.clk_path.text():
+                files["clk"] = open(self.clk_path.text(), "rb")
 
-            t  = np.array([x["t"] for x in e])
-            dx = np.array([x["dx"] for x in e])
-            dy = np.array([x["dy"] for x in e])
-            dz = np.array([x["dz"] for x in e])
+            response = requests.post(
+                "http://localhost:8080/analyze",
+                files=files
+            )
 
-            dr, dt, dn = dx, dy, dz
-            clk = np.zeros_like(t)
+            if response.status_code != 200:
+                print("API error:", response.status_code)
+                return
 
-            self.update_plots(t, dx, dy, dz, dr, dt, dn, clk)
-            self.update_stats(dx, dy, dz, dr, dt, dn, clk)
-            self.update_table(t, dx, dy, dz, dr, dt, dn)
+            data = response.json()
+
+            self.handle_response(data)
 
         except Exception as e:
-            print("Error:", e)
+            print("Connection error:", e)
 
     # ================= UPDATE ================= #
 
@@ -229,18 +284,35 @@ class MainWindow(QMainWindow):
         self.rtn_plot.clear()
         self.clock_plot.clear()
 
+        # ===== Orbit =====
         self.orbit_plot.addLegend()
+
+        c1 = self.orbit_plot.plot(t, dx, pen='b', name="X")
+        c2 = self.orbit_plot.plot(t, dy, pen='r', name="Y")
+        c3 = self.orbit_plot.plot(t, dz, pen='g', name="Z")
+
+        self.orbit_hover = PlotHover(self.orbit_plot)
+        self.orbit_hover.add_curve(c1, "X")
+        self.orbit_hover.add_curve(c2, "Y")
+        self.orbit_hover.add_curve(c3, "Z")
+
+        # ===== RTN =====
         self.rtn_plot.addLegend()
 
-        self.orbit_plot.plot(t, dx, pen='b', name="X")
-        self.orbit_plot.plot(t, dy, pen='r', name="Y")
-        self.orbit_plot.plot(t, dz, pen='g', name="Z")
+        c4 = self.rtn_plot.plot(t, dr, pen='y', name="R")
+        c5 = self.rtn_plot.plot(t, dt, pen='c', name="T")
+        c6 = self.rtn_plot.plot(t, dn, pen='m', name="N")
 
-        self.rtn_plot.plot(t, dr, pen='y', name="R")
-        self.rtn_plot.plot(t, dt, pen='c', name="T")
-        self.rtn_plot.plot(t, dn, pen='m', name="N")
+        self.rtn_hover = PlotHover(self.rtn_plot)
+        self.rtn_hover.add_curve(c4, "R")
+        self.rtn_hover.add_curve(c5, "T")
+        self.rtn_hover.add_curve(c6, "N")
 
-        self.clock_plot.plot(t, clk, pen='w')
+        # ===== Clock =====
+        c7 = self.clock_plot.plot(t, clk, pen='w')
+
+        self.clock_hover = PlotHover(self.clock_plot)
+        self.clock_hover.add_curve(c7, "CLK")
 
     def update_stats(self, dx, dy, dz, dr, dt, dn, clk):
 
@@ -286,3 +358,22 @@ class MainWindow(QMainWindow):
 
     def open_history(self):
         print("History")
+
+
+    def handle_response(self, data):
+
+        epochs = data["epochs"]
+
+        t  = np.array([e["t"] for e in epochs])
+        dx = np.array([e["dx"] for e in epochs])
+        dy = np.array([e["dy"] for e in epochs])
+        dz = np.array([e["dz"] for e in epochs])
+
+        # пока RTN заглушка
+        dr, dt, dn = dx, dy, dz
+
+        clk = np.zeros_like(t)
+
+        self.update_plots(t, dx, dy, dz, dr, dt, dn, clk)
+        self.update_table(t, dx, dy, dz, dr, dt, dn)
+        self.update_statistics(dx, dy, dz, dr, dt, dn, clk)
