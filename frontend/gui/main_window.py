@@ -90,13 +90,24 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.create_plots())
-        splitter.addWidget(self.create_stats())
+        splitter.addWidget(self.create_statistics_panel())
 
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
-
         main_layout.addWidget(splitter)
-        main_layout.addWidget(self.create_table())
+
+        self.table = self.create_table()
+        self.table.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding
+        )
+        self.table.verticalHeader().setDefaultSectionSize(22)
+        main_layout.addWidget(self.table)
+
+        main_layout.setStretch(1, 5)  # графики
+        main_layout.setStretch(2, 2)  # таблица
+        main_layout.setStretch(1, 4)
+        main_layout.setStretch(2, 3)
 
     # ================= TOOLBAR ================= #
 
@@ -195,26 +206,31 @@ class MainWindow(QMainWindow):
 
     # ================= STATS ================= #
 
-    def create_stats(self):
+    def create_statistics_panel(self):
 
-        w = QWidget()
-        layout = QGridLayout(w)
+        widget = QWidget()
+        layout = QGridLayout()
 
-        names = [
+        stats = [
             "RMS X", "RMS Y", "RMS Z", "RMS 3D",
             "RMS R", "RMS T", "RMS N",
             "Mean", "Max", "Clock RMS"
         ]
 
-        self.stats = {}
+        self.stats_labels = {}   # ← ВОТ ЭТО КЛЮЧЕВОЕ
 
-        for i, n in enumerate(names):
-            layout.addWidget(QLabel(n), i, 0)
-            val = QLabel("---")
-            layout.addWidget(val, i, 1)
-            self.stats[n] = val
+        for i, stat in enumerate(stats):
 
-        return w
+            label_name = QLabel(stat)
+            label_value = QLabel("---")
+
+            layout.addWidget(label_name, i, 0)
+            layout.addWidget(label_value, i, 1)
+
+            self.stats_labels[stat] = label_value  # ← и это
+
+        widget.setLayout(layout)
+        return widget
 
     # ================= TABLE ================= #
 
@@ -250,28 +266,46 @@ class MainWindow(QMainWindow):
         self.run_analysis()
 
     def run_analysis(self):
+
+        calc_path = self.calc_path.text()
+        ref_path  = self.ref_path.text()
+
+        if not calc_path or not ref_path:
+            print("Select SP3 files first")
+            return
+
         try:
-            files = {
-                "calc": open(self.calc_path.text(), "rb"),
-                "ref": open(self.ref_path.text(), "rb"),
-            }
+            with open(calc_path, "rb") as f1, open(ref_path, "rb") as f2:
 
-            # если есть clk (потом добавим чекбокс)
-            if self.clk_path.text():
-                files["clk"] = open(self.clk_path.text(), "rb")
+                files = {
+                    "calc": f1,
+                    "ref": f2
+                }
 
-            response = requests.post(
-                "http://localhost:8080/analyze",
-                files=files
-            )
+                response = requests.post(
+                    "http://localhost:8080/analyze",
+                    files=files
+                )
 
             if response.status_code != 200:
                 print("API error:", response.status_code)
                 return
 
             data = response.json()
+            epochs = data.get("epochs", [])
 
-            self.handle_response(data)
+            t  = [e["t"] for e in epochs]
+            dx = [e["dx"] for e in epochs]
+            dy = [e["dy"] for e in epochs]
+            dz = [e["dz"] for e in epochs]
+            dr = [e.get("dr", 0) for e in epochs]
+            dt = [e.get("dt", 0) for e in epochs]
+            dn = [e.get("dn", 0) for e in epochs]
+            clk = [e.get("clk", 0) for e in epochs]
+
+            self.update_plots(t, dx, dy, dz, dr, dt, dn, clk)
+            self.update_table(t, dx, dy, dz, dr, dt, dn)
+            self.update_statistics(dx, dy, dz, dr, dt, dn, clk)
 
         except Exception as e:
             print("Connection error:", e)
@@ -314,25 +348,30 @@ class MainWindow(QMainWindow):
         self.clock_hover = PlotHover(self.clock_plot)
         self.clock_hover.add_curve(c7, "CLK")
 
-    def update_stats(self, dx, dy, dz, dr, dt, dn, clk):
+    def update_statistics(self, dx, dy, dz, dr, dt, dn, clk):
+        import numpy as np
 
-        def rms(x): return np.sqrt(np.mean(x**2))
+        def rms(x):
+            x = np.array(x)
+            return np.sqrt(np.mean(x**2)) if len(x) else 0
 
-        vals = {
+        stats = {
             "RMS X": rms(dx),
             "RMS Y": rms(dy),
             "RMS Z": rms(dz),
-            "RMS 3D": rms(np.sqrt(dx**2+dy**2+dz**2)),
+            "RMS 3D": rms(np.sqrt(np.array(dx)**2 + np.array(dy)**2 + np.array(dz)**2)),
             "RMS R": rms(dr),
             "RMS T": rms(dt),
             "RMS N": rms(dn),
-            "Mean": np.mean(dx),
-            "Max": np.max(np.abs(dx)),
+            "Mean": np.mean(dx) if len(dx) else 0,
+            "Max": np.max(np.abs(dx)) if len(dx) else 0,
             "Clock RMS": rms(clk)
         }
 
-        for k,v in vals.items():
-            self.stats[k].setText(f"{v:.4f}")
+        for key, value in stats.items():
+            if key in self.stats_labels:
+                self.stats_labels[key].setText(f"{value:.4f}")
+
 
     def update_table(self, t, dx, dy, dz, dr, dt, dn):
 
@@ -347,6 +386,10 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 5, QTableWidgetItem(f"{dr[i]:.4f}"))
             self.table.setItem(i, 6, QTableWidgetItem(f"{dt[i]:.4f}"))
             self.table.setItem(i, 7, QTableWidgetItem(f"{dn[i]:.4f}"))
+
+        if not hasattr(self, "table"):
+            print("Table not initialized")
+            return
 
     # ================= STUBS ================= #
 
