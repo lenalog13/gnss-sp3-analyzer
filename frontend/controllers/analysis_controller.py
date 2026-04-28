@@ -41,6 +41,8 @@ class AnalysisController:
         stats = self.calculate_statistics(result)
         self.db.save_statistics(experiment_id, stats)
 
+        print("RESULT FROM BACKEND:", result)
+
         # 6. Возвращаем всё в GUI
         return {
             "experiment_id": experiment_id,
@@ -75,9 +77,9 @@ class AnalysisController:
 
     def calculate_statistics(self, data):
 
-        dx = data["dx"]
-        dy = data["dy"]
-        dz = data["dz"]
+        dx = np.array(data["dx"])
+        dy = np.array(data["dy"])
+        dz = np.array(data["dz"])
 
         def rms(x):
             return float(np.sqrt(np.mean(x**2)))

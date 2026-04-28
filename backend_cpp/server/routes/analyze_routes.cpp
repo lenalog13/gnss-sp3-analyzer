@@ -2,36 +2,56 @@
 #include "../services/analysis_service.h"
 
 #include <fstream>
+#include <string>
 
 void setupAnalyzeRoutes(crow::SimpleApp& app) {
 
-    CROW_ROUTE(app, "/analyze").methods("POST"_method)
-
+    CROW_ROUTE(app, "/analyze").methods(crow::HTTPMethod::Post)
     ([](const crow::request& req) {
 
         crow::multipart::message msg(req);
 
         auto calc_part = msg.get_part_by_name("calc");
-
         auto ref_part  = msg.get_part_by_name("ref");
 
+        // ===== Проверка =====
         if (calc_part.body.empty() || ref_part.body.empty()) {
-
-            return crow::response(400, "Files missing");
-
+            return crow::response(400, R"({"error":"files missing"})");
         }
 
-        std::string calc_data = calc_part.body;
+        // ===== Пути (лучше временные) =====
+        std::string calc_path = "/tmp/calc.sp3";
+        std::string ref_path  = "/tmp/ref.sp3";
 
-        std::string ref_data  = ref_part.body;
+        // ===== Сохраняем БИНАРНО =====
+        {
+            std::ofstream f(calc_path, std::ios::binary);
+            if (!f) {
+                return crow::response(500, R"({"error":"cannot write calc"})");
+            }
+            f.write(calc_part.body.c_str(), calc_part.body.size());
+        }
 
-        std::ofstream("calc.sp3") << calc_data;
+        {
+            std::ofstream f(ref_path, std::ios::binary);
+            if (!f) {
+                return crow::response(500, R"({"error":"cannot write ref"})");
+            }
+            f.write(ref_part.body.c_str(), ref_part.body.size());
+        }
 
-        std::ofstream("ref.sp3")  << ref_data;
+        // ===== Анализ =====
+        auto result = AnalysisService::analyze(calc_path, ref_path);
 
-        auto result = AnalysisService::analyze("calc.sp3", "ref.sp3");
+        // ===== JSON ответ =====
+        crow::response res;
+        res.code = 200;
+        res.set_header("Content-Type", "application/json");
+        res.write(result.dump());
 
-        return crow::response(result.dump());
+        std::cout << "calc size: " << calc_part.body.size() << std::endl;
+        std::cout << "ref size: " << ref_part.body.size() << std::endl;
+
+        return res;
     });
 }
-

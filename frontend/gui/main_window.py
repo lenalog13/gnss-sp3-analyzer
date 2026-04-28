@@ -4,13 +4,17 @@ import pyqtgraph as pg
 import numpy as np
 import requests
 
+
+# ================= HOVER ================= #
+
 class PlotHover:
     def __init__(self, plot_widget):
         self.plot = plot_widget
+
         self.vLine = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('#aaaaaa'))
         self.plot.addItem(self.vLine, ignoreBounds=True)
 
-        self.label = pg.TextItem("", anchor=(0,1))
+        self.label = pg.TextItem("", anchor=(0, 1))
         self.plot.addItem(self.label)
 
         self.curves = []
@@ -39,14 +43,13 @@ class PlotHover:
         text = f"x = {x:.2f}\n"
 
         for curve, name in self.curves:
-            data = curve.getData()
-            if data[0] is None:
+            x_data, y_data = curve.getData()
+
+            if x_data is None or len(x_data) == 0:
                 continue
 
-            x_data, y_data = data
-
-            if len(x_data) == 0:
-                continue
+            x_data = np.array(x_data)
+            y_data = np.array(y_data)
 
             idx = (np.abs(x_data - x)).argmin()
             y = y_data[idx]
@@ -56,10 +59,14 @@ class PlotHover:
         self.label.setText(text)
         self.label.setPos(x, mouse_point.y())
 
+
+# ================= MAIN WINDOW ================= #
+
 class MainWindow(QMainWindow):
 
     def __init__(self, controller=None):
         super().__init__()
+
         self.controller = controller
 
         self.setWindowTitle("GNSS SP3 Analyzer")
@@ -94,19 +101,14 @@ class MainWindow(QMainWindow):
 
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
+
         main_layout.addWidget(splitter)
 
         self.table = self.create_table()
-        self.table.setSizePolicy(
-            QSizePolicy.Expanding,
-            QSizePolicy.Expanding
-        )
-        self.table.verticalHeader().setDefaultSectionSize(22)
+        self.table.setMinimumHeight(250)
         main_layout.addWidget(self.table)
 
-        main_layout.setStretch(1, 5)  # графики
-        main_layout.setStretch(2, 2)  # таблица
-        main_layout.setStretch(1, 4)
+        main_layout.setStretch(1, 5)
         main_layout.setStretch(2, 3)
 
     # ================= TOOLBAR ================= #
@@ -148,8 +150,6 @@ class MainWindow(QMainWindow):
         sat_layout.addWidget(QLabel("Satellite:"))
 
         self.satellite_box = QComboBox()
-        self.satellite_box.setMinimumWidth(150)
-
         sat_layout.addWidget(self.satellite_box)
         sat_layout.addStretch()
 
@@ -191,7 +191,6 @@ class MainWindow(QMainWindow):
         self.rtn_plot = pg.PlotWidget(title="RTN")
         self.clock_plot = pg.PlotWidget(title="Clock")
 
-        # Легенды (ОДИН раз!)
         self.orbit_plot.addLegend()
         self.rtn_plot.addLegend()
 
@@ -217,17 +216,16 @@ class MainWindow(QMainWindow):
             "Mean", "Max", "Clock RMS"
         ]
 
-        self.stats_labels = {}   # ← ВОТ ЭТО КЛЮЧЕВОЕ
+        self.stats_labels = {}
 
         for i, stat in enumerate(stats):
-
             label_name = QLabel(stat)
             label_value = QLabel("---")
 
             layout.addWidget(label_name, i, 0)
             layout.addWidget(label_value, i, 1)
 
-            self.stats_labels[stat] = label_value  # ← и это
+            self.stats_labels[stat] = label_value
 
         widget.setLayout(layout)
         return widget
@@ -245,7 +243,7 @@ class MainWindow(QMainWindow):
 
         return table
 
-    # ================= LOGIC ================= #
+    # ================= BACKEND ================= #
 
     def check_backend(self):
         try:
@@ -268,7 +266,7 @@ class MainWindow(QMainWindow):
     def run_analysis(self):
 
         calc_path = self.calc_path.text()
-        ref_path  = self.ref_path.text()
+        ref_path = self.ref_path.text()
 
         if not calc_path or not ref_path:
             print("Select SP3 files first")
@@ -277,27 +275,28 @@ class MainWindow(QMainWindow):
         try:
             with open(calc_path, "rb") as f1, open(ref_path, "rb") as f2:
 
-                files = {
-                    "calc": f1,
-                    "ref": f2
-                }
-
                 response = requests.post(
                     "http://localhost:8080/analyze",
-                    files=files
+                    files = {
+                    "calc": ("calc.sp3", f1, "application/octet-stream"),
+                    "ref": ("ref.sp3", f2, "application/octet-stream"),
+}
                 )
 
-            if response.status_code != 200:
-                print("API error:", response.status_code)
-                return
-
             data = response.json()
+            print("BACKEND:", data)
+
             epochs = data.get("epochs", [])
 
-            t  = [e["t"] for e in epochs]
+            if not epochs:
+                print("No data from backend")
+                return
+
+            t = [e["t"] for e in epochs]
             dx = [e["dx"] for e in epochs]
             dy = [e["dy"] for e in epochs]
             dz = [e["dz"] for e in epochs]
+
             dr = [e.get("dr", 0) for e in epochs]
             dt = [e.get("dt", 0) for e in epochs]
             dn = [e.get("dn", 0) for e in epochs]
@@ -314,42 +313,37 @@ class MainWindow(QMainWindow):
 
     def update_plots(self, t, dx, dy, dz, dr, dt, dn, clk):
 
+        if len(t) == 0:
+            return
+
         self.orbit_plot.clear()
         self.rtn_plot.clear()
         self.clock_plot.clear()
-
-        # ===== Orbit =====
-        self.orbit_plot.addLegend()
 
         c1 = self.orbit_plot.plot(t, dx, pen='b', name="X")
         c2 = self.orbit_plot.plot(t, dy, pen='r', name="Y")
         c3 = self.orbit_plot.plot(t, dz, pen='g', name="Z")
 
-        self.orbit_hover = PlotHover(self.orbit_plot)
-        self.orbit_hover.add_curve(c1, "X")
-        self.orbit_hover.add_curve(c2, "Y")
-        self.orbit_hover.add_curve(c3, "Z")
-
-        # ===== RTN =====
-        self.rtn_plot.addLegend()
+        hover = PlotHover(self.orbit_plot)
+        hover.add_curve(c1, "X")
+        hover.add_curve(c2, "Y")
+        hover.add_curve(c3, "Z")
 
         c4 = self.rtn_plot.plot(t, dr, pen='y', name="R")
         c5 = self.rtn_plot.plot(t, dt, pen='c', name="T")
         c6 = self.rtn_plot.plot(t, dn, pen='m', name="N")
 
-        self.rtn_hover = PlotHover(self.rtn_plot)
-        self.rtn_hover.add_curve(c4, "R")
-        self.rtn_hover.add_curve(c5, "T")
-        self.rtn_hover.add_curve(c6, "N")
+        hover2 = PlotHover(self.rtn_plot)
+        hover2.add_curve(c4, "R")
+        hover2.add_curve(c5, "T")
+        hover2.add_curve(c6, "N")
 
-        # ===== Clock =====
         c7 = self.clock_plot.plot(t, clk, pen='w')
 
-        self.clock_hover = PlotHover(self.clock_plot)
-        self.clock_hover.add_curve(c7, "CLK")
+        hover3 = PlotHover(self.clock_plot)
+        hover3.add_curve(c7, "CLK")
 
     def update_statistics(self, dx, dy, dz, dr, dt, dn, clk):
-        import numpy as np
 
         def rms(x):
             x = np.array(x)
@@ -372,7 +366,6 @@ class MainWindow(QMainWindow):
             if key in self.stats_labels:
                 self.stats_labels[key].setText(f"{value:.4f}")
 
-
     def update_table(self, t, dx, dy, dz, dr, dt, dn):
 
         self.table.setRowCount(len(t))
@@ -387,10 +380,6 @@ class MainWindow(QMainWindow):
             self.table.setItem(i, 6, QTableWidgetItem(f"{dt[i]:.4f}"))
             self.table.setItem(i, 7, QTableWidgetItem(f"{dn[i]:.4f}"))
 
-        if not hasattr(self, "table"):
-            print("Table not initialized")
-            return
-
     # ================= STUBS ================= #
 
     def load_files(self):
@@ -401,22 +390,3 @@ class MainWindow(QMainWindow):
 
     def open_history(self):
         print("History")
-
-
-    def handle_response(self, data):
-
-        epochs = data["epochs"]
-
-        t  = np.array([e["t"] for e in epochs])
-        dx = np.array([e["dx"] for e in epochs])
-        dy = np.array([e["dy"] for e in epochs])
-        dz = np.array([e["dz"] for e in epochs])
-
-        # пока RTN заглушка
-        dr, dt, dn = dx, dy, dz
-
-        clk = np.zeros_like(t)
-
-        self.update_plots(t, dx, dy, dz, dr, dt, dn, clk)
-        self.update_table(t, dx, dy, dz, dr, dt, dn)
-        self.update_statistics(dx, dy, dz, dr, dt, dn, clk)
