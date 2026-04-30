@@ -71,6 +71,7 @@ add_executable(server
     server/routes/analyze_routes.cpp
     server/routes/experiment_routes.cpp
     server/services/analysis_service.cpp  
+    server/services/clk_parser.cpp
     ${INAV_ROOT}/src/Sp3/reader.cpp
 )
 

@@ -266,21 +266,39 @@ class MainWindow(QMainWindow):
     def run_analysis(self):
 
         calc_path = self.calc_path.text()
-        ref_path = self.ref_path.text()
+        ref_path  = self.ref_path.text()
+        clk_path  = self.clk_path.text()
 
         if not calc_path or not ref_path:
             print("Select SP3 files first")
             return
 
+        files = {
+            "calc": open(calc_path, "rb"),
+            "ref": open(ref_path, "rb")
+        }
+
+        if clk_path:
+            files["clk"] = open(clk_path, "rb")
+
+        response = requests.post(
+            "http://localhost:8080/analyze",
+            files=files
+        )
         try:
-            with open(calc_path, "rb") as f1, open(ref_path, "rb") as f2:
+            with open(calc_path, "rb") as f1, \
+                open(ref_path, "rb") as f2, \
+                open(clk_path, "rb") as f3:
+
+                files = {
+                    "calc": f1,
+                    "ref": f2,
+                    "clk": f3
+                }
 
                 response = requests.post(
                     "http://localhost:8080/analyze",
-                    files = {
-                    "calc": ("calc.sp3", f1, "application/octet-stream"),
-                    "ref": ("ref.sp3", f2, "application/octet-stream"),
-}
+                    files=files
                 )
 
             data = response.json()
