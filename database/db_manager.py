@@ -37,25 +37,20 @@ class DBManager:
 
     # ---------------- EPOCHS ---------------- #
 
-    def save_epochs(self, experiment_id, data):
+    def save_epochs(self, experiment_id, epochs):
 
-        t = data["t"]
-        dx = data["dx"]
-        dy = data["dy"]
-        dz = data["dz"]
-
-        # пока без RTN и clk (добавим завтра)
         records = []
 
-        for i in range(len(t)):
+        for e in epochs:
             records.append((
                 experiment_id,
-                float(t[i]),
-                "R12",  # временно
-                float(dx[i]),
-                float(dy[i]),
-                float(dz[i]),
-                None, None, None, None
+                float(e["t"]),
+                e["sat"],                  # 🔥 теперь реальный спутник
+                float(e["dx"]),
+                float(e["dy"]),
+                float(e["dz"]),
+                None, None, None,
+                float(e["clk"]) if e["clk"] is not None else None
             ))
 
         self.cursor.executemany("""
@@ -68,13 +63,22 @@ class DBManager:
 
         self.conn.commit()
 
-    def get_epochs(self, experiment_id):
-        self.cursor.execute("""
-            SELECT epoch_time, dx, dy, dz, dr, dt, dn, clock_error
-            FROM epochs
-            WHERE experiment_id = %s
-            ORDER BY epoch_time
-        """, (experiment_id,))
+    def get_epochs(self, experiment_id, satellite=None):
+
+        if satellite:
+            self.cursor.execute("""
+                SELECT epoch_time, dx, dy, dz, dr, dt, dn, clock_error
+                FROM epochs
+                WHERE experiment_id = %s AND satellite = %s
+                ORDER BY epoch_time
+            """, (experiment_id, satellite))
+        else:
+            self.cursor.execute("""
+                SELECT epoch_time, dx, dy, dz, dr, dt, dn, clock_error
+                FROM epochs
+                WHERE experiment_id = %s
+                ORDER BY epoch_time
+            """, (experiment_id,))
 
         rows = self.cursor.fetchall()
 
@@ -101,6 +105,17 @@ class DBManager:
             data["clk"].append(row[7])
 
         return data
+    
+    # ---------------- SATELLITE ---------------- #
+
+    def get_satellites(self, experiment_id):
+        self.cursor.execute("""
+            SELECT DISTINCT satellite
+            FROM epochs
+            WHERE experiment_id = %s
+            ORDER BY satellite
+        """, (experiment_id,))
+        return [row[0] for row in self.cursor.fetchall()]
 
     # ---------------- STATISTICS ---------------- #
 

@@ -112,7 +112,7 @@ nlohmann::json AnalysisService::analyze(
             double dy = c.coord.y - r.coord.y;
             double dz = c.coord.z - r.coord.z;
 
-            // ===== KEY (ВОТ ЧЕГО НЕ ХВАТАЛО) =====
+            // ===== KEY =====
             ClkKey key{epoch, sat};
 
             // ===== CLOCK ЛОГИКА =====
@@ -130,6 +130,7 @@ nlohmann::json AnalysisService::analyze(
 
             result["epochs"].push_back({
                 {"t", epoch.toSecsSinceEpoch()},
+                {"sat", sat.toString().toStdString()},
                 {"dx", dx},
                 {"dy", dy},
                 {"dz", dz},
@@ -141,24 +142,6 @@ nlohmann::json AnalysisService::analyze(
     // ===== DEBUG =====
     qDebug() << "calc epochs:" << calc_sp3.records.size();
     qDebug() << "ref epochs:" << ref_sp3.records.size();
-
-    std::cout << "calc: " << calc_sp3.records.size() << " эпох" << std::endl;
-
-    int total_sats = 0;
-    for (auto it = calc_sp3.records.begin(); it != calc_sp3.records.end(); ++it) {
-        total_sats += it.value().size();
-    }
-    std::cout << "Всего записей о спутниках: " << total_sats << std::endl;
-
-    int ref_epoch_count = ref_sp3.records.size();
-    int ref_sat_count = 0;
-    for (auto it = ref_sp3.records.begin(); it != ref_sp3.records.end(); ++it) {
-        ref_sat_count += it.value().size();
-    }
-
-    std::cout << "ref: " << ref_epoch_count
-              << " эпох, " << ref_sat_count
-              << " записей о спутниках" << std::endl;
 
     return result;
 }
