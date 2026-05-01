@@ -9,6 +9,38 @@
 
 using namespace sp3;
 
+static void fillMissingClockFromRef(sp3::SP3_FILE& calc,
+                                    const sp3::SP3_FILE& ref)
+{
+    for (auto it = calc.records.begin(); it != calc.records.end(); ++it)
+    {
+        const QDateTime& epoch = it.key();
+
+        if (!ref.records.contains(epoch))
+            continue;
+
+        auto& calcSats = it.value();
+        const auto& refSats = ref.records[epoch];
+
+        for (auto sit = calcSats.begin(); sit != calcSats.end(); ++sit)
+        {
+            const Satellite& sat = sit.key();
+
+            if (!refSats.contains(sat))
+                continue;
+
+            auto& c = sit.value();
+            const auto& r = refSats[sat];
+
+            // если clock "битый" → берем из ref
+            if (c.clock >= 999999.0 || std::isnan(c.clock))
+            {
+                c.clock = r.clock;
+            }
+        }
+    }
+}
+
 nlohmann::json AnalysisService::analyze(
     const std::string& calc_path,
     const std::string& ref_path,
@@ -29,6 +61,8 @@ nlohmann::json AnalysisService::analyze(
 
     bool ok1 = Sp3Reader::parse(calcFile, calc_sp3);
     bool ok2 = Sp3Reader::parse(refFile, ref_sp3);
+
+    fillMissingClockFromRef(calc_sp3, ref_sp3);
 
     if (!ok1) {
         return {{"error", "calc parse failed"}};
@@ -95,6 +129,13 @@ nlohmann::json AnalysisService::analyze(
                 {"clk", clk}
             });
         }
+    }
+
+    qDebug() << "calc epochs:" << calc_sp3.records.size();
+    qDebug() << "ref epochs:" << ref_sp3.records.size();
+
+    if (ref_sp3.records.empty()) {
+        return {{"error", "ref sp3 parsed empty"}};
     }
 
     // Просто выводим количество по аналогии с оригинальным кодом
