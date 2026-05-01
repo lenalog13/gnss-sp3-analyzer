@@ -3,14 +3,19 @@
 
 #include <QFile>
 #include <QString>
+#include <QDebug>
+
 #include <cmath>
+#include <limits>
+#include <iostream>
 
 #include <Sp3/reader.h>
 
 using namespace sp3;
 
-static void fillMissingClockFromRef(sp3::SP3_FILE& calc,
-                                    const sp3::SP3_FILE& ref)
+// ================= CLOCK FIX из REF =================
+static void fillMissingClockFromRef(SP3_FILE& calc,
+                                    const SP3_FILE& ref)
 {
     for (auto it = calc.records.begin(); it != calc.records.end(); ++it)
     {
@@ -32,7 +37,6 @@ static void fillMissingClockFromRef(sp3::SP3_FILE& calc,
             auto& c = sit.value();
             const auto& r = refSats[sat];
 
-            // если clock "битый" → берем из ref
             if (c.clock >= 999999.0 || std::isnan(c.clock))
             {
                 c.clock = r.clock;
@@ -41,6 +45,7 @@ static void fillMissingClockFromRef(sp3::SP3_FILE& calc,
     }
 }
 
+// ================= MAIN =================
 nlohmann::json AnalysisService::analyze(
     const std::string& calc_path,
     const std::string& ref_path,
@@ -50,7 +55,7 @@ nlohmann::json AnalysisService::analyze(
     SP3_FILE ref_sp3;
     CLK_MAP clk_data;
 
-    // ===== CLK (опционально) =====
+    // ===== CLK =====
     if (!clk_path.empty()) {
         ClkParser::parse(QString::fromStdString(clk_path), clk_data);
     }
@@ -62,8 +67,6 @@ nlohmann::json AnalysisService::analyze(
     bool ok1 = Sp3Reader::parse(calcFile, calc_sp3);
     bool ok2 = Sp3Reader::parse(refFile, ref_sp3);
 
-    fillMissingClockFromRef(calc_sp3, ref_sp3);
-
     if (!ok1) {
         return {{"error", "calc parse failed"}};
     }
@@ -71,6 +74,8 @@ nlohmann::json AnalysisService::analyze(
     if (!ok2) {
         return {{"error", "ref parse failed"}};
     }
+
+    fillMissingClockFromRef(calc_sp3, ref_sp3);
 
     nlohmann::json result;
     result["epochs"] = nlohmann::json::array();
@@ -80,15 +85,12 @@ nlohmann::json AnalysisService::analyze(
     {
         const QDateTime& epoch = it.key();
 
-        // 🔥 ищем ближайшую эпоху в ref
         auto it_ref = ref_sp3.records.lowerBound(epoch);
-
         if (it_ref == ref_sp3.records.end())
             continue;
 
         QDateTime ref_epoch = it_ref.key();
 
-        // ограничение по времени (например 15 минут)
         qint64 dt = std::abs(ref_epoch.secsTo(epoch));
         if (dt > 900)
             continue;
@@ -110,16 +112,21 @@ nlohmann::json AnalysisService::analyze(
             double dy = c.coord.y - r.coord.y;
             double dz = c.coord.z - r.coord.z;
 
-            // ===== CLOCK =====
-            double clk = NAN;
+            // ===== KEY (ВОТ ЧЕГО НЕ ХВАТАЛО) =====
+            ClkKey key{epoch, sat};
 
-            if (!clk_path.empty()) {
-                ClkKey key{epoch, sat};
+            // ===== CLOCK ЛОГИКА =====
+            double clk = 0.0;
 
-                if (clk_data.contains(key)) {
-                    clk = clk_data[key];
-                }
+            // 1. из CLK файла
+            if (!clk_path.empty() && clk_data.contains(key)) {
+                clk = clk_data[key];
             }
+            // 2. иначе из SP3
+            else if (!std::isnan(c.clock) && c.clock < 999999.0) {
+                clk = c.clock;
+            }
+            // 3. fallback уже 0.0
 
             result["epochs"].push_back({
                 {"t", epoch.toSecsSinceEpoch()},
@@ -131,29 +138,27 @@ nlohmann::json AnalysisService::analyze(
         }
     }
 
+    // ===== DEBUG =====
     qDebug() << "calc epochs:" << calc_sp3.records.size();
     qDebug() << "ref epochs:" << ref_sp3.records.size();
 
-    if (ref_sp3.records.empty()) {
-        return {{"error", "ref sp3 parsed empty"}};
+    std::cout << "calc: " << calc_sp3.records.size() << " эпох" << std::endl;
+
+    int total_sats = 0;
+    for (auto it = calc_sp3.records.begin(); it != calc_sp3.records.end(); ++it) {
+        total_sats += it.value().size();
     }
+    std::cout << "Всего записей о спутниках: " << total_sats << std::endl;
 
-    // Просто выводим количество по аналогии с оригинальным кодом
-        std::cout << "calc: " << calc_sp3.records.size() << " эпох" << std::endl;
-
-        int total_sats = 0;
-        for (auto it = calc_sp3.records.begin(); it != calc_sp3.records.end(); ++it) {
-            total_sats += it.value().size();
-        }
-        std::cout << "Всего записей о спутниках: " << total_sats << std::endl;
-
-        // Статистика для ref
     int ref_epoch_count = ref_sp3.records.size();
     int ref_sat_count = 0;
     for (auto it = ref_sp3.records.begin(); it != ref_sp3.records.end(); ++it) {
         ref_sat_count += it.value().size();
     }
-    std::cout << "ref: " << ref_epoch_count << " эпох, " << ref_sat_count << " записей о спутниках" << std::endl;
+
+    std::cout << "ref: " << ref_epoch_count
+              << " эпох, " << ref_sat_count
+              << " записей о спутниках" << std::endl;
 
     return result;
 }
