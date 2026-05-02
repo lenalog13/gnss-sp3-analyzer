@@ -17,8 +17,6 @@ from frontend.gui.history_window import HistoryWindow
 
 # ================= HOVER ================= #
 
-# ================= HOVER ================= #
-
 class PlotHover:
     def __init__(self, plot_widget):
         self.plot = plot_widget
@@ -120,7 +118,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.controller = controller
-        self.db = DBManager()
+        # Убираем self.db = DBManager() - теперь используем контекстный менеджер
         self.current_experiment_id = None
         self.current_epochs_data = None
         self.current_satellite = None
@@ -428,14 +426,14 @@ class MainWindow(QMainWindow):
                         except:
                             epoch[key] = None
 
-            # Save to database
+            # Save to database using context manager
             experiment_name = f"Analysis_{os.path.basename(calc_path)}_{os.path.basename(ref_path)}"
             experiment_data = {"name": experiment_name}
-            experiment_id = self.db.save_experiment(experiment_data)
-            self.current_experiment_id = experiment_id
             
-            # Save epochs
-            self.db.save_epochs(experiment_id, epochs)
+            with DBManager() as db:
+                experiment_id = db.save_experiment(experiment_data)
+                self.current_experiment_id = experiment_id
+                db.save_epochs(experiment_id, epochs)
             
             # Get unique satellites and update dropdown
             self.refresh_satellite_list()
@@ -456,7 +454,9 @@ class MainWindow(QMainWindow):
         """Refresh the satellite dropdown list"""
         if self.current_experiment_id:
             try:
-                satellites = self.db.get_satellites(self.current_experiment_id)
+                with DBManager() as db:
+                    satellites = db.get_satellites(self.current_experiment_id)
+                
                 self.satellite_box.clear()
                 if satellites:
                     self.satellite_box.addItems(satellites)
@@ -476,8 +476,9 @@ class MainWindow(QMainWindow):
     def load_and_plot_data(self, experiment_id, satellite):
         """Load data for specific satellite and update plots"""
         try:
-            # Get filtered data for selected satellite
-            data = self.db.get_epochs(experiment_id, satellite=satellite)
+            # Get filtered data for selected satellite using context manager
+            with DBManager() as db:
+                data = db.get_epochs(experiment_id, satellite=satellite)
             
             if not data or len(data["t"]) == 0:
                 QMessageBox.warning(self, "Warning", f"No data found for satellite {satellite}")
@@ -688,7 +689,8 @@ class MainWindow(QMainWindow):
     def load_files(self):
         """Load existing experiment from database"""
         if not self.history_window:
-            self.history_window = HistoryWindow(self.db)
+            # Убираем передачу self.db, HistoryWindow сам создаёт соединение
+            self.history_window = HistoryWindow()
             self.history_window.experiment_selected.connect(self.on_experiment_selected)
         
         self.history_window.show()

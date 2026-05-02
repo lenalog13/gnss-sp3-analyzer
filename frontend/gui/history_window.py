@@ -3,16 +3,18 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QPushButton, QHeaderView
 )
 from PySide6.QtCore import Signal
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../database'))
+from db_manager import DBManager 
 
 
 class HistoryWindow(QWidget):
 
-    experiment_selected = Signal(int)  # передаём ID
+    experiment_selected = Signal(int) 
 
-    def __init__(self, db):
+    def __init__(self): 
         super().__init__()
-
-        self.db = db
 
         self.setWindowTitle("Experiment History")
         self.resize(700, 500)
@@ -25,7 +27,7 @@ class HistoryWindow(QWidget):
         layout = QVBoxLayout()
 
         self.table = QTableWidget()
-        self.table.setColumnCount(4)  # Добавляем колонку для спутников
+        self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels([
             "ID", "Name", "Created", "Satellites"
         ])
@@ -35,45 +37,52 @@ class HistoryWindow(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
 
-        self.btn_load = QPushButton("Load Experiment")
+        # Добавляем кнопку "Refresh"
+        self.btn_refresh = QPushButton("🔄 Refresh")
+        self.btn_load = QPushButton("📂 Load Experiment")
 
         layout.addWidget(self.table)
+        layout.addWidget(self.btn_refresh)
         layout.addWidget(self.btn_load)
 
         self.setLayout(layout)
+        
+        # Подключаем сигналы
         self.btn_load.clicked.connect(self.load_selected)
+        self.btn_refresh.clicked.connect(self.load_history)  
 
     def load_history(self):
         """Load real data from database"""
         try:
-            data = self.db.get_experiments()
-            
-            if not data:
-                # Show message if no data
-                self.table.setRowCount(1)
-                self.table.setItem(0, 0, QTableWidgetItem("No experiments found"))
-                return
-            
-            self.table.setRowCount(len(data))
-            
-            for i, row in enumerate(data):
-                # row format: (id, name, created_at)
-                exp_id = row[0]
-                name = row[1]
-                created_at = row[2]
+            with DBManager() as db:
+                data = db.get_experiments()
                 
-                # Get satellites for this experiment
-                satellites = self.db.get_satellites(exp_id)
-                satellites_str = ', '.join(satellites) if satellites else "No satellites"
+                if not data:
+                    # Show message if no data
+                    self.table.setRowCount(1)
+                    self.table.setItem(0, 0, QTableWidgetItem("No experiments found"))
+                    return
                 
-                # Add to table
-                self.table.setItem(i, 0, QTableWidgetItem(str(exp_id)))
-                self.table.setItem(i, 1, QTableWidgetItem(str(name)))
-                self.table.setItem(i, 2, QTableWidgetItem(str(created_at)))
-                self.table.setItem(i, 3, QTableWidgetItem(satellites_str))
+                self.table.setRowCount(len(data))
+                
+                for i, row in enumerate(data):
+                    # row format: (id, name, created_at)
+                    exp_id = row[0]
+                    name = row[1]
+                    created_at = row[2]
                     
-            # Auto-resize columns
-            self.table.resizeColumnsToContents()
+                    # Get satellites for this experiment
+                    satellites = db.get_satellites(exp_id)
+                    satellites_str = ', '.join(satellites) if satellites else "No satellites"
+                    
+                    # Add to table
+                    self.table.setItem(i, 0, QTableWidgetItem(str(exp_id)))
+                    self.table.setItem(i, 1, QTableWidgetItem(str(name)))
+                    self.table.setItem(i, 2, QTableWidgetItem(str(created_at)))
+                    self.table.setItem(i, 3, QTableWidgetItem(satellites_str))
+                        
+                # Auto-resize columns
+                self.table.resizeColumnsToContents()
             
         except Exception as e:
             print(f"Error loading history: {e}")
