@@ -62,13 +62,15 @@ class DBManager:
             records.append((
                 experiment_id,
                 float(e["t"]),
-                e["sat"],                  
+                e["sat"],
                 float(e["dx"]),
                 float(e["dy"]),
                 float(e["dz"]),
-                None, None, None,
+                float(e["dr"]) if e["dr"] is not None else None,
+                float(e["dt"]) if e["dt"] is not None else None,
+                float(e["dn"]) if e["dn"] is not None else None,
                 float(e["clk"]) if e["clk"] is not None else None
-            ))
+))
         
         with self.get_cursor() as cursor:
             cursor.executemany("""
@@ -193,11 +195,28 @@ class DBManager:
     # ---------------- FILES ---------------- #
 
     def save_files(self, experiment_id, calc_path, ref_path, clk_path):
+        files = [
+            ("calc", calc_path),
+            ("ref", ref_path)
+        ]
+
+        if clk_path:
+            files.append(("clk", clk_path))
+
+        with self.get_cursor() as cursor:
+            cursor.executemany("""
+                INSERT INTO files (experiment_id, type, path)
+                VALUES (%s, %s, %s)
+            """, [
+                (experiment_id, ftype, path)
+                for ftype, path in files
+            ])
+
+    def delete_files(self, experiment_id):
         with self.get_cursor() as cursor:
             cursor.execute("""
-                INSERT INTO files (experiment_id, calc_file, ref_file, clk_file)
-                VALUES (%s, %s, %s, %s)
-            """, (experiment_id, calc_path, ref_path, clk_path))
+                DELETE FROM files WHERE experiment_id = %s
+            """, (experiment_id,))
 
 
     def close(self):

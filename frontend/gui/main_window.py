@@ -1,7 +1,7 @@
 import sys
 import os
 from PySide6.QtWidgets import *
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QPointF
 from PySide6.QtGui import QIcon
 import pyqtgraph as pg
 import numpy as np
@@ -63,6 +63,32 @@ class PlotHover:
         # Получаем координаты мыши в системе координат графика
         mouse_point = vb.mapSceneToView(pos)
         x = mouse_point.x()
+        y = mouse_point.y()
+
+        view_range = vb.viewRange()  # [[xmin, xmax], [ymin, ymax]]
+        x_min, x_max = view_range[0]
+        y_min, y_max = view_range[1]
+        
+        # Ограничиваем y
+        y = min(max(y, y_min), y_max)
+        
+        x_range = x_max - x_min
+        x_threshold = x_min + x_range * 0.8  # 80% от левого края
+        
+        if x > x_threshold:
+            anchor = (1, 1)  # Привязка справа - метка будет слева от курсора
+            offset_x = -10   # Смещение влево
+        else:
+            anchor = (0, 1)  # Привязка слева - метка будет справа от курсора
+            offset_x = 10    # Смещение вправо
+
+        self.label.setAnchor(anchor)
+
+        # Добавляем пиксельный offset
+        scene_pos = vb.mapViewToScene(mouse_point)
+        scene_pos += QPointF(offset_x, -10)
+
+        self.label.setPos(vb.mapSceneToView(scene_pos))
         
         # Перемещаем вертикальную линию
         self.vLine.setPos(x)
@@ -83,7 +109,7 @@ class PlotHover:
                 y_data = np.array(y_data)
                 
                 idx = (np.abs(x_data - x)).argmin()
-                y = y_data[idx]
+                y_val = y_data[idx]
                 
                 # Цвет для разных кривых
                 color_map = {
@@ -96,7 +122,7 @@ class PlotHover:
                     "Clock": "#ffffff"
                 }
                 color = color_map.get(name, "#ffffff")
-                text += f'<span style="color: {color};">{name}</span>: {y:.6f}<br>'
+                text += f'<span style="color: {color};">{name}</span>: {y_val:.6f}<br>'
             except Exception as e:
                 print(f"Error getting curve data: {e}")
                 continue
@@ -105,9 +131,6 @@ class PlotHover:
         
         # Обновляем текст метки
         self.label.setHtml(text)
-        
-        # Позиционируем метку (немного смещаем, чтобы не перекрывать линию)
-        self.label.setPos(x + 10, mouse_point.y())
 
 
 # ================= MAIN WINDOW ================= #
@@ -291,6 +314,15 @@ class MainWindow(QMainWindow):
         self.orbit_plot.addLegend()
         self.rtn_plot.addLegend()
 
+        self.orbit_plot.setLabel('bottom', 'Time (hours)')
+        self.orbit_plot.setLabel('left', 'Position error (m)')
+
+        self.rtn_plot.setLabel('bottom', 'Time (hours)')
+        self.rtn_plot.setLabel('left', 'RTN error (m)')
+
+        self.clock_plot.setLabel('bottom', 'Time (hours)')
+        self.clock_plot.setLabel('left', 'Clock')
+
         for p in [self.orbit_plot, self.rtn_plot, self.clock_plot]:
             p.showGrid(x=True, y=True)
 
@@ -471,7 +503,8 @@ class MainWindow(QMainWindow):
                     elif msg.clickedButton() == btn_overwrite:
                         experiment_id = existing_id
                         db.delete_epochs(experiment_id)
-                        db.delete_statistics(experiment_id)  # 👈 ДОБАВЬ ЭТО
+                        db.delete_statistics(experiment_id) 
+                        db.delete_files(experiment_id)
 
                     else:
                         experiment_id = db.save_experiment(experiment_data)
@@ -482,6 +515,7 @@ class MainWindow(QMainWindow):
                 self.current_experiment_id = experiment_id
 
                 db.save_epochs(experiment_id, epochs)
+                db.save_files(experiment_id, calc_path, ref_path, clk_path)
 
                 if stats is not None:
                     db.save_statistics(experiment_id, stats)
@@ -594,6 +628,7 @@ class MainWindow(QMainWindow):
         
         # Конвертируем в numpy массивы
         t_array = np.array(t, dtype=float)
+        t_array = (t_array - t_array[0]) / 3600.0  # часы от начала
         
         # Если все времена одинаковые, используем индекс как время
         if len(t_array) > 1 and np.all(t_array == t_array[0]):

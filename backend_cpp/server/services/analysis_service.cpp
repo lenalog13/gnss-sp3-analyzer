@@ -142,6 +142,14 @@ nlohmann::json AnalysisService::analyze(
             double dy = c.coord.y - r.coord.y;
             double dz = c.coord.z - r.coord.z;
 
+            double r_norm = std::sqrt(r.coord.x*r.coord.x +
+                          r.coord.y*r.coord.y +
+                          r.coord.z*r.coord.z);
+
+            double ux = r.coord.x / r_norm;
+            double uy = r.coord.y / r_norm;
+            double uz = r.coord.z / r_norm;
+
             // ===== KEY =====
             ClkKey key{epoch, sat};
 
@@ -194,6 +202,10 @@ nlohmann::json AnalysisService::analyze(
             }
 
             Vec3 eT = normalize(v_vec);
+            if (norm(eT) == 0) {
+                eT = {0,0,0};
+            }
+
             Vec3 eN = normalize(cross(eR, eT));
 
             Vec3 d = {dx, dy, dz};
