@@ -32,12 +32,11 @@ class DBManager:
             cursor.execute("""
                 INSERT INTO experiments (name)
                 VALUES (%s)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
                 RETURNING id
             """, (data.get("name", "Experiment"),))
-            
-            experiment_id = cursor.fetchone()[0]
-            return experiment_id
-            # commit автоматический, курсор закрывается
+
+            return cursor.fetchone()[0]
 
     def get_experiments(self):
         with self.get_cursor() as cursor:
@@ -47,6 +46,13 @@ class DBManager:
                 ORDER BY created_at DESC
             """)
             return cursor.fetchall()
+        
+    def get_experiment_by_name(self, name):
+        with self.get_cursor() as cursor:
+            cursor.execute("SELECT id FROM experiments WHERE name = %s", (name,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+        
     
     # ---------------- EPOCHS ---------------- #
 
@@ -111,6 +117,12 @@ class DBManager:
         
         return data
     
+    def delete_epochs(self, experiment_id):
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                DELETE FROM epochs WHERE experiment_id = %s
+            """, (experiment_id,))
+    
     # ---------------- SATELLITE ---------------- #
 
     def get_satellites(self, experiment_id):
@@ -171,6 +183,23 @@ class DBManager:
             "clock_rms": row[9]
         }
     
+    def delete_statistics(self, experiment_id):
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                DELETE FROM statistics
+                WHERE experiment_id = %s
+            """, (experiment_id,))
+
+    # ---------------- FILES ---------------- #
+
+    def save_files(self, experiment_id, calc_path, ref_path, clk_path):
+        with self.get_cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO files (experiment_id, calc_file, ref_file, clk_file)
+                VALUES (%s, %s, %s, %s)
+            """, (experiment_id, calc_path, ref_path, clk_path))
+
+
     def close(self):
         """Закрыть соединение"""
         if self.conn:

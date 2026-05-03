@@ -234,7 +234,6 @@ class MainWindow(QMainWindow):
         self.satellite_box.currentTextChanged.connect(self.on_satellite_changed)
         sat_layout.addWidget(self.satellite_box)
         
-        # Улучшенная кнопка обновления
         refresh_btn = QPushButton("↻")
         refresh_btn.setFixedSize(28, 28)
         refresh_btn.setToolTip("Refresh satellite list")
@@ -327,6 +326,27 @@ class MainWindow(QMainWindow):
 
         widget.setLayout(layout)
         return widget
+    
+    def show_statistics(self, stats):
+        if not stats:
+            return
+
+        mapping = {
+            "RMS X": stats.get("rms_x"),
+            "RMS Y": stats.get("rms_y"),
+            "RMS Z": stats.get("rms_z"),
+            "RMS 3D": stats.get("rms_3d"),
+            "RMS R": stats.get("rms_r"),
+            "RMS T": stats.get("rms_t"),
+            "RMS N": stats.get("rms_n"),
+            "Mean": stats.get("mean"),
+            "Max": stats.get("max"),
+            "Clock RMS": stats.get("clock_rms")
+        }
+
+        for key, value in mapping.items():
+            if key in self.stats_labels and value is not None:
+                self.stats_labels[key].setText(f"{value:.6f}")
 
     # ================= TABLE ================= #
 
@@ -400,6 +420,7 @@ class MainWindow(QMainWindow):
 
             data = response.json()
             epochs = data.get("epochs", [])
+            stats = data.get("statistics", {})
 
             if not epochs:
                 QMessageBox.warning(self, "Warning", "No data from backend")
@@ -431,9 +452,39 @@ class MainWindow(QMainWindow):
             experiment_data = {"name": experiment_name}
             
             with DBManager() as db:
-                experiment_id = db.save_experiment(experiment_data)
+                existing_id = db.get_experiment_by_name(experiment_name)
+
+                if existing_id:
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle("Experiment exists")
+                    msg.setText(f"Experiment '{experiment_name}' already exists.")
+
+                    btn_overwrite = msg.addButton("Overwrite", QMessageBox.AcceptRole)
+                    btn_new = msg.addButton("Create New", QMessageBox.RejectRole)
+                    btn_cancel = msg.addButton("Cancel", QMessageBox.DestructiveRole)
+
+                    msg.exec()
+
+                    if msg.clickedButton() == btn_cancel:
+                        return
+
+                    elif msg.clickedButton() == btn_overwrite:
+                        experiment_id = existing_id
+                        db.delete_epochs(experiment_id)
+                        db.delete_statistics(experiment_id)  # 👈 ДОБАВЬ ЭТО
+
+                    else:
+                        experiment_id = db.save_experiment(experiment_data)
+
+                else:
+                    experiment_id = db.save_experiment(experiment_data)
+
                 self.current_experiment_id = experiment_id
+
                 db.save_epochs(experiment_id, epochs)
+
+                if stats is not None:
+                    db.save_statistics(experiment_id, stats)
             
             # Get unique satellites and update dropdown
             self.refresh_satellite_list()
@@ -479,6 +530,7 @@ class MainWindow(QMainWindow):
             # Get filtered data for selected satellite using context manager
             with DBManager() as db:
                 data = db.get_epochs(experiment_id, satellite=satellite)
+                stats = db.get_statistics(experiment_id)
             
             if not data or len(data["t"]) == 0:
                 QMessageBox.warning(self, "Warning", f"No data found for satellite {satellite}")
@@ -519,15 +571,7 @@ class MainWindow(QMainWindow):
             )
             
             # Update statistics
-            self.update_statistics(
-                data["dx"], 
-                data["dy"], 
-                data["dz"],
-                data["dr"], 
-                data["dt"], 
-                data["dn"], 
-                data["clk"]
-            )
+            self.show_statistics(stats)
             
             self.statusBar().showMessage(f"Loaded satellite {satellite} with {len(data['t'])} epochs")
             
